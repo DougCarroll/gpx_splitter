@@ -1,0 +1,1253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPX Track Splitter</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #555;
+            font-weight: bold;
+        }
+        input, select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            width: 100%;
+            font-size: 16px;
+            margin-top: 10px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .file-upload {
+            border: 2px dashed #ddd;
+            border-radius: 4px;
+            padding: 20px;
+            text-align: center;
+            margin-bottom: 20px;
+            background-color: #fafafa;
+        }
+        .file-upload.dragover {
+            border-color: #4CAF50;
+            background-color: #f0f8f0;
+        }
+        .file-input {
+            display: none;
+        }
+        .file-label {
+            cursor: pointer;
+            color: #4CAF50;
+            font-weight: bold;
+        }
+        .file-label:hover {
+            text-decoration: underline;
+        }
+        .selected-file {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #e8f5e8;
+            border-radius: 4px;
+            display: none;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 4px;
+            display: none;
+        }
+        .success {
+            background-color: #dff0d8;
+            color: #3c763d;
+        }
+        .error {
+            background-color: #f2dede;
+            color: #a94442;
+        }
+        .tracks-container {
+            margin-top: 20px;
+        }
+        .track-card {
+            background-color: #f8f9fa;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+        .track-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .track-name {
+            font-weight: bold;
+            color: #333;
+            font-size: 18px;
+            cursor: pointer;
+            padding: 2px 4px;
+            border-radius: 3px;
+            transition: background-color 0.2s;
+        }
+        .track-name:hover {
+            background-color: #f0f0f0;
+        }
+        .track-name-edit {
+            font-weight: bold;
+            color: #333;
+            font-size: 18px;
+            border: 2px solid #4CAF50;
+            border-radius: 3px;
+            padding: 2px 4px;
+            background-color: white;
+            width: 300px;
+        }
+        .track-name-edit:focus {
+            outline: none;
+            border-color: #45a049;
+            box-shadow: 0 0 5px rgba(76, 175, 80, 0.3);
+        }
+        .track-location-info {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #f0f8f0;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+        }
+        .location-row {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+            gap: 10px;
+        }
+        .location-row:last-child {
+            margin-bottom: 0;
+        }
+        .location-label {
+            font-weight: bold;
+            color: #555;
+            min-width: 60px;
+        }
+        .location-name-input {
+            flex: 1;
+            padding: 5px 8px;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+            font-size: 14px;
+        }
+        .location-name-input:focus {
+            outline: none;
+            border-color: #4CAF50;
+            box-shadow: 0 0 3px rgba(76, 175, 80, 0.2);
+        }
+        .location-coords {
+            font-family: monospace;
+            color: #666;
+            font-size: 13px;
+        }
+        .name-format-checkbox {
+            margin-left: 10px;
+        }
+        .name-format-checkbox label {
+            font-weight: normal;
+            font-size: 13px;
+            color: #555;
+            cursor: pointer;
+        }
+        .track-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        .stat-item {
+            background-color: white;
+            padding: 8px;
+            border-radius: 3px;
+            border: 1px solid #ddd;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+            text-transform: uppercase;
+        }
+        .stat-value {
+            font-weight: bold;
+            color: #333;
+        }
+        .download-btn {
+            background-color: #007bff;
+            color: white;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            margin-top: 10px;
+        }
+        .download-btn:hover {
+            background-color: #0056b3;
+        }
+        .view-map-btn {
+            background-color: #28a745;
+            color: white;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            margin-top: 10px;
+            margin-left: 10px;
+        }
+        .view-map-btn:hover {
+            background-color: #218838;
+        }
+        .loading {
+            text-align: center;
+            padding: 20px;
+            display: none;
+        }
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #4CAF50;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .map-container {
+            margin-top: 20px;
+            height: 500px;
+            border-radius: 5px;
+            overflow: hidden;
+            display: none;
+        }
+        .map-controls {
+            margin-bottom: 10px;
+            text-align: center;
+        }
+        .map-controls button {
+            width: auto;
+            margin: 0 5px;
+        }
+        .map-legend {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background-color: white;
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: none;
+            z-index: 1000;
+        }
+        .map-legend h4 {
+            margin-top: 0;
+            margin-bottom: 10px;
+            color: #333;
+            font-size: 18px;
+        }
+        .map-legend #legendContent {
+            max-width: 200px;
+            text-align: left;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>GPX Track Splitter</h1>
+        
+        <form id="gpxForm" enctype="multipart/form-data">
+            <div class="file-upload" id="fileUpload">
+                <label for="gpxFile" class="file-label">Click to select GPX file or drag and drop</label>
+                <input type="file" id="gpxFile" name="gpx_file" accept=".gpx" class="file-input" required>
+                <div class="selected-file" id="selectedFile"></div>
+            </div>
+            
+            <div class="form-group">
+                <label>Splitting Method:</label>
+                <div style="margin-top: 10px;">
+                    <label style="display: inline-block; margin-right: 20px; font-weight: normal;">
+                        <input type="radio" name="split_method" value="tracks" checked> Split by Track Tags
+                    </label>
+                    <label style="display: inline-block; font-weight: normal;">
+                        <input type="radio" name="split_method" value="time"> Split by Time/Distance
+                    </label>
+                </div>
+            </div>
+            
+            <div id="timeBasedOptions" style="display: none;">
+                <div class="form-group">
+                    <label for="maxDistanceNm">Maximum Distance (nautical miles):</label>
+                    <input type="number" id="maxDistanceNm" name="max_distance_nm" value="1.0" step="0.1" min="0.1" max="10.0">
+                </div>
+                
+                <div class="form-group">
+                    <label for="maxTimeHours">Maximum Time (hours):</label>
+                    <input type="number" id="maxTimeHours" name="max_time_hours" value="1.0" step="0.1" min="0.1" max="24.0">
+                </div>
+                
+                <div class="form-group">
+                    <label style="display: inline-block; font-weight: normal;">
+                        <input type="checkbox" id="requireTimestamps" name="require_timestamps" value="true"> Require timestamps (skip points without timestamps)
+                    </label>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label style="display: inline-block; font-weight: normal;">
+                    <input type="checkbox" id="lookupPlaceNames" name="lookup_place_names" value="true" checked> Look up place names for start and end coordinates
+                </label>
+                <small style="display: block; color: #666; margin-top: 5px;">
+                    (Requires internet connection. Takes approximately 1-2 seconds per track.)
+                </small>
+            </div>
+            
+            <button type="submit" id="submitBtn">Split GPX File</button>
+        </form>
+        
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>Processing GPX file...</p>
+        </div>
+        
+        <div id="result" class="result"></div>
+        
+        <div class="map-container" id="mapContainer">
+            <div class="map-controls">
+                <button onclick="showAllTracks()">Show All Tracks</button>
+                <button onclick="clearMap()">Clear Map</button>
+                <button onclick="toggleLegend()">Toggle Legend</button>
+            </div>
+            <div id="map" style="height: 100%;"></div>
+            <div id="legend" class="map-legend" style="display: none;">
+                <h4>Track Legend</h4>
+                <div id="legendContent"></div>
+            </div>
+        </div>
+        
+        <div class="tracks-container" id="tracksContainer"></div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // File upload handling
+        const fileUpload = document.getElementById('fileUpload');
+        const fileInput = document.getElementById('gpxFile');
+        const selectedFile = document.getElementById('selectedFile');
+        const form = document.getElementById('gpxForm');
+        const submitBtn = document.getElementById('submitBtn');
+        const loading = document.getElementById('loading');
+        const result = document.getElementById('result');
+        const tracksContainer = document.getElementById('tracksContainer');
+        const mapContainer = document.getElementById('mapContainer');
+        
+        let map = null;
+        let trackLayers = [];
+        let allTracks = [];
+        let progressInterval = null;
+        let currentOperationId = null;
+
+        // Handle splitting method changes
+        const splitMethodRadios = document.querySelectorAll('input[name="split_method"]');
+        const timeBasedOptions = document.getElementById('timeBasedOptions');
+
+        splitMethodRadios.forEach(radio => {
+            radio.addEventListener('change', function() {
+                if (this.value === 'time') {
+                    timeBasedOptions.style.display = 'block';
+                    submitBtn.textContent = 'Split GPX File by Time/Distance';
+                } else {
+                    timeBasedOptions.style.display = 'none';
+                    submitBtn.textContent = 'Split GPX File by Tracks';
+                }
+            });
+        });
+
+        // Drag and drop functionality
+        fileUpload.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            fileUpload.classList.add('dragover');
+        });
+
+        fileUpload.addEventListener('dragleave', () => {
+            fileUpload.classList.remove('dragover');
+        });
+
+        fileUpload.addEventListener('drop', (e) => {
+            e.preventDefault();
+            fileUpload.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                fileInput.files = files;
+                updateFileDisplay();
+            }
+        });
+
+        fileInput.addEventListener('change', updateFileDisplay);
+
+        function updateFileDisplay() {
+            const file = fileInput.files[0];
+            if (file) {
+                selectedFile.style.display = 'block';
+                selectedFile.innerHTML = `
+                    <strong>Selected file:</strong> ${file.name}<br>
+                    <small>Size: ${(file.size / 1024).toFixed(1)} KB</small>
+                `;
+            } else {
+                selectedFile.style.display = 'none';
+            }
+        }
+
+        // Form submission
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formData = new FormData(form);
+            
+            // Show loading
+            loading.style.display = 'block';
+            const loadingText = loading.querySelector('p');
+            if (loadingText) {
+                loadingText.textContent = 'Processing GPX file...';
+            }
+            result.style.display = 'none';
+            tracksContainer.innerHTML = '';
+            mapContainer.style.display = 'none';
+            submitBtn.disabled = true;
+            
+            // Clear any existing progress polling
+            if (progressInterval) {
+                clearInterval(progressInterval);
+                progressInterval = null;
+            }
+            
+            // Start the request
+            try {
+                const response = await fetch('/split-gpx', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (data.success && data.operation_id) {
+                    // Start polling for progress with the operation ID
+                    currentOperationId = data.operation_id;
+                    startProgressPolling(data.operation_id);
+                } else if (data.success && data.tracks) {
+                    // Legacy response format (shouldn't happen with new code)
+                    if (progressInterval) {
+                        clearInterval(progressInterval);
+                        progressInterval = null;
+                    }
+                    if (window.currentProgressInterval) {
+                        clearInterval(window.currentProgressInterval);
+                        window.currentProgressInterval = null;
+                    }
+                    showSuccess(data);
+                    showTracks(data.tracks);
+                    allTracks = data.tracks;
+                    loading.style.display = 'none';
+                    submitBtn.disabled = false;
+                } else {
+                    // Error response
+                    if (progressInterval) {
+                        clearInterval(progressInterval);
+                        progressInterval = null;
+                    }
+                    if (window.currentProgressInterval) {
+                        clearInterval(window.currentProgressInterval);
+                        window.currentProgressInterval = null;
+                    }
+                    showError(data.error || 'Unknown error');
+                    loading.style.display = 'none';
+                    submitBtn.disabled = false;
+                    currentOperationId = null;
+                }
+            } catch (error) {
+                // Stop progress polling/intervals on error
+                if (progressInterval) {
+                    clearInterval(progressInterval);
+                    progressInterval = null;
+                }
+                if (window.currentProgressInterval) {
+                    clearInterval(window.currentProgressInterval);
+                    window.currentProgressInterval = null;
+                }
+                showError('Network error: ' + error.message);
+                loading.style.display = 'none';
+                submitBtn.disabled = false;
+                currentOperationId = null;
+            }
+            
+            // Show estimated progress while processing
+            // Since geocoding happens synchronously during the request,
+            // we'll show an estimated progress based on elapsed time
+            const startTime = Date.now();
+            let dots = 0;
+            
+            const progressUpdate = setInterval(() => {
+                if (loading.style.display === 'none' || !loading.style.display) {
+                    clearInterval(progressUpdate);
+                    return;
+                }
+                
+                const elapsed = Math.floor((Date.now() - startTime) / 1000);
+                dots = (dots + 1) % 4;
+                const dotString = '.'.repeat(dots);
+                
+                if (loadingText) {
+                    loadingText.innerHTML = `
+                        Processing GPX file and looking up place names${dotString}<br>
+                        <small>This may take a moment (approximately 1-2 seconds per track)</small>
+                    `;
+                }
+            }, 500);
+            
+            // Store interval to clear it later
+            window.currentProgressInterval = progressUpdate;
+        });
+        
+        // Start progress polling
+        function startProgressPolling(operationId) {
+            currentOperationId = operationId;
+            
+            // Clear any existing interval
+            if (progressInterval) {
+                clearInterval(progressInterval);
+            }
+            if (window.currentProgressInterval) {
+                clearInterval(window.currentProgressInterval);
+                window.currentProgressInterval = null;
+            }
+            
+            // Poll for progress every 500ms
+            progressInterval = setInterval(async () => {
+                if (!currentOperationId) {
+                    clearInterval(progressInterval);
+                    progressInterval = null;
+                    return;
+                }
+                
+                try {
+                    const response = await fetch(`/progress/${currentOperationId}`);
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        updateProgressDisplay(data);
+                        
+                        // Check if complete
+                        if (data.status === 'complete' && data.tracks) {
+                            // Stop polling
+                            clearInterval(progressInterval);
+                            progressInterval = null;
+                            
+                            // Show results
+                            const loadingText = loading.querySelector('p');
+                            if (loadingText) {
+                                if (data.total > 0) {
+                                    loadingText.innerHTML = `
+                                        Processing complete!<br>
+                                        <small>Processed ${data.total_tracks} track${data.total_tracks !== 1 ? 's' : ''} 
+                                        (${data.completed} place name lookups completed)</small>
+                                    `;
+                                } else {
+                                    loadingText.innerHTML = `
+                                        Processing complete!<br>
+                                        <small>Processed ${data.total_tracks} track${data.total_tracks !== 1 ? 's' : ''}</small>
+                                    `;
+                                }
+                            }
+                            
+                            // Small delay to show completion message
+                            setTimeout(() => {
+                                showSuccess({
+                                    success: true,
+                                    tracks: data.tracks,
+                                    total_tracks: data.total_tracks,
+                                    split_method: data.split_method
+                                });
+                                showTracks(data.tracks);
+                                allTracks = data.tracks;
+                                loading.style.display = 'none';
+                                submitBtn.disabled = false;
+                                currentOperationId = null;
+                            }, 500);
+                        } else if (data.status === 'error') {
+                            // Stop polling on error
+                            clearInterval(progressInterval);
+                            progressInterval = null;
+                            showError(data.error || 'Processing error occurred');
+                            loading.style.display = 'none';
+                            submitBtn.disabled = false;
+                            currentOperationId = null;
+                        }
+                    } else {
+                        // Operation not found or error, stop polling
+                        clearInterval(progressInterval);
+                        progressInterval = null;
+                        showError(data.error || 'Operation not found');
+                        loading.style.display = 'none';
+                        submitBtn.disabled = false;
+                        currentOperationId = null;
+                    }
+                } catch (error) {
+                    console.error('Error fetching progress:', error);
+                    // Don't stop polling on network errors, just log them
+                }
+            }, 500);
+        }
+        
+        function updateProgressDisplay(progressData) {
+            const loadingText = loading.querySelector('p');
+            if (loadingText) {
+                if (progressData.total > 0) {
+                    // Place name lookup is enabled
+                    const remaining = progressData.remaining;
+                    const total = progressData.total;
+                    const percentage = progressData.percentage;
+                    const currentTrack = progressData.current_track;
+                    const totalTracks = progressData.total_tracks;
+                    
+                    loadingText.innerHTML = `
+                        Looking up place names...<br>
+                        <strong>Track ${currentTrack} of ${totalTracks}</strong><br>
+                        <small>${remaining} of ${total} lookups remaining (${percentage}% complete)</small>
+                    `;
+                } else {
+                    // Place name lookup is disabled, just show track processing
+                    const currentTrack = progressData.current_track || 0;
+                    const totalTracks = progressData.total_tracks;
+                    
+                    loadingText.innerHTML = `
+                        Processing tracks...<br>
+                        <strong>Track ${currentTrack} of ${totalTracks}</strong><br>
+                        <small>Place name lookup disabled</small>
+                    `;
+                }
+            }
+        }
+
+        function showSuccess(data) {
+            result.className = 'result success';
+            result.style.display = 'block';
+            result.innerHTML = `
+                <strong>Success!</strong> Split GPX file into ${data.total_tracks} tracks.
+            `;
+        }
+
+        function showError(message) {
+            result.className = 'result error';
+            result.style.display = 'block';
+            result.innerHTML = `
+                <strong>Error:</strong> ${message}
+            `;
+        }
+
+        function showTracks(tracks) {
+            tracksContainer.innerHTML = '';
+            
+            tracks.forEach((track, index) => {
+                const trackCard = document.createElement('div');
+                trackCard.className = 'track-card';
+                
+                // Get place names and coordinates
+                const startPlaceName = track.start_place_name || '';
+                const endPlaceName = track.end_place_name || '';
+                const startCoords = track.start_coords || `${track.start_lat?.toFixed(4) || ''},${track.start_lon?.toFixed(4) || ''}`;
+                const endCoords = track.end_coords || `${track.end_lat?.toFixed(4) || ''},${track.end_lon?.toFixed(4) || ''}`;
+                
+                // Generate display name based on current selection
+                // Default to using names if available
+                const useStartName = startPlaceName ? true : false;
+                const useEndName = endPlaceName ? true : false;
+                const displayStart = useStartName && startPlaceName ? startPlaceName : startCoords;
+                const displayEnd = useEndName && endPlaceName ? endPlaceName : endCoords;
+                const displayName = `${displayStart} to ${displayEnd}`;
+                
+                // Store initial state
+                track.use_start_name = useStartName;
+                track.use_end_name = useEndName;
+                track.display_name = displayName;
+                
+                trackCard.innerHTML = `
+                    <div class="track-header">
+                        <div class="track-name-container">
+                            <span class="track-name" id="track-name-${index}" onclick="editTrackName(${index})">${displayName}</span>
+                            <input type="text" class="track-name-edit" id="track-name-edit-${index}" value="${displayName}" style="display: none;" onblur="saveTrackName(${index})" onkeypress="handleTrackNameKeyPress(event, ${index})">
+                        </div>
+                        <div>
+                            <a href="#" class="download-btn" data-track-index="${index}" onclick="downloadGPXFromData(this, ${index})">
+                                Download GPX
+                            </a>
+                            <a href="#" class="view-map-btn" onclick="showTrackOnMap(${index})">
+                                View on Map
+                            </a>
+                        </div>
+                    </div>
+                    <div class="track-location-info">
+                        <div class="location-row">
+                            <span class="location-label">Start:</span>
+                            <input type="text" class="location-name-input" id="start-place-name-${index}" 
+                                   value="${startPlaceName}" placeholder="Enter place name" 
+                                   onblur="updatePlaceName(${index}, 'start')">
+                            <span class="location-coords">${startCoords}</span>
+                            <div class="name-format-checkbox">
+                                <label>
+                                    <input type="checkbox" id="use-start-name-${index}" ${useStartName && startPlaceName ? 'checked' : ''} 
+                                           onchange="updateTrackDisplayName(${index})"> Use name
+                                </label>
+                            </div>
+                        </div>
+                        <div class="location-row">
+                            <span class="location-label">End:</span>
+                            <input type="text" class="location-name-input" id="end-place-name-${index}" 
+                                   value="${endPlaceName}" placeholder="Enter place name" 
+                                   onblur="updatePlaceName(${index}, 'end')">
+                            <span class="location-coords">${endCoords}</span>
+                            <div class="name-format-checkbox">
+                                <label>
+                                    <input type="checkbox" id="use-end-name-${index}" ${useEndName && endPlaceName ? 'checked' : ''} 
+                                           onchange="updateTrackDisplayName(${index})"> Use name
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="track-stats">
+                        <div class="stat-item">
+                            <div class="stat-label">Start Time</div>
+                            <div class="stat-value">${formatDateTime(track.start_time)}</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">End Time</div>
+                            <div class="stat-value">${formatDateTime(track.end_time)}</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">Duration</div>
+                            <div class="stat-value">${track.duration_hours} hours</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">Distance</div>
+                            <div class="stat-value">${track.total_distance_nm} nm</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">Points</div>
+                            <div class="stat-value">${track.point_count}</div>
+                        </div>
+                    </div>
+                `;
+                
+                tracksContainer.appendChild(trackCard);
+            });
+        }
+        
+        function updatePlaceName(trackIndex, location) {
+            const inputId = location === 'start' ? `start-place-name-${trackIndex}` : `end-place-name-${trackIndex}`;
+            const input = document.getElementById(inputId);
+            const newName = input.value.trim();
+            
+            if (allTracks[trackIndex]) {
+                if (location === 'start') {
+                    allTracks[trackIndex].start_place_name = newName;
+                } else {
+                    allTracks[trackIndex].end_place_name = newName;
+                }
+                
+                // Update display name
+                updateTrackDisplayName(trackIndex);
+                
+                // Update on server
+                updatePlaceNameOnServer(trackIndex, location, newName);
+            }
+        }
+        
+        function updateTrackDisplayName(trackIndex) {
+            if (!allTracks[trackIndex]) return;
+            
+            const track = allTracks[trackIndex];
+            const useStartNameCheckbox = document.getElementById(`use-start-name-${trackIndex}`);
+            const useEndNameCheckbox = document.getElementById(`use-end-name-${trackIndex}`);
+            const useStartName = useStartNameCheckbox ? useStartNameCheckbox.checked : false;
+            const useEndName = useEndNameCheckbox ? useEndNameCheckbox.checked : false;
+            
+            // Store checkbox states
+            track.use_start_name = useStartName;
+            track.use_end_name = useEndName;
+            
+            const startPlaceNameInput = document.getElementById(`start-place-name-${trackIndex}`);
+            const endPlaceNameInput = document.getElementById(`end-place-name-${trackIndex}`);
+            const startPlaceName = startPlaceNameInput ? startPlaceNameInput.value.trim() : (track.start_place_name || '');
+            const endPlaceName = endPlaceNameInput ? endPlaceNameInput.value.trim() : (track.end_place_name || '');
+            
+            // Update stored place names
+            track.start_place_name = startPlaceName;
+            track.end_place_name = endPlaceName;
+            
+            const startCoords = track.start_coords || `${track.start_lat?.toFixed(4) || ''},${track.start_lon?.toFixed(4) || ''}`;
+            const endCoords = track.end_coords || `${track.end_lat?.toFixed(4) || ''},${track.end_lon?.toFixed(4) || ''}`;
+            
+            const displayStart = useStartName && startPlaceName ? startPlaceName : startCoords;
+            const displayEnd = useEndName && endPlaceName ? endPlaceName : endCoords;
+            const displayName = `${displayStart} to ${displayEnd}`;
+            
+            // Update track name display
+            const nameSpan = document.getElementById(`track-name-${trackIndex}`);
+            if (nameSpan) {
+                nameSpan.textContent = displayName;
+            }
+            
+            // Update the stored display name
+            track.display_name = displayName;
+        }
+        
+        async function updatePlaceNameOnServer(trackIndex, location, newName) {
+            try {
+                const track = allTracks[trackIndex];
+                const updateData = {
+                    track_index: trackIndex,
+                    new_name: track.display_name || track.name
+                };
+                
+                if (location === 'start') {
+                    updateData.start_place_name = newName;
+                } else {
+                    updateData.end_place_name = newName;
+                }
+                
+                const response = await fetch('/update-track-name', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(updateData)
+                });
+                
+                const data = await response.json();
+                if (!data.success) {
+                    console.error('Failed to update place name:', data.error);
+                }
+            } catch (error) {
+                console.error('Error updating place name:', error);
+            }
+        }
+
+        function formatDateTime(dateTimeStr) {
+            const date = new Date(dateTimeStr);
+            return date.toLocaleString();
+        }
+
+        function downloadGPXFromData(element, trackIndex) {
+            try {
+                const track = allTracks[trackIndex];
+                if (!track) {
+                    throw new Error('Track not found');
+                }
+                
+                // Get the current display name (may have been edited)
+                const nameSpan = document.getElementById(`track-name-${trackIndex}`);
+                const trackName = nameSpan ? nameSpan.textContent : track.display_name || track.name;
+                
+                // Get GPX content
+                const gpxContent = track.gpx_content;
+                
+                if (!gpxContent) {
+                    throw new Error('No GPX content found');
+                }
+                
+                // Use server-side download endpoint
+                downloadViaServer(gpxContent, trackName, trackIndex);
+                
+            } catch (error) {
+                console.error('Error downloading GPX file:', error);
+                const track = allTracks[trackIndex];
+                const filename = track ? (track.display_name || track.name) : 'track';
+                showDownloadFeedback(filename, false, error.message);
+            }
+        }
+        
+        function downloadViaServer(gpxContent, filename, trackIndex) {
+            try {
+                // Get the current track name (may have been edited)
+                const track = allTracks[trackIndex];
+                const nameSpan = document.getElementById(`track-name-${trackIndex}`);
+                const trackName = nameSpan ? nameSpan.textContent : (track.display_name || track.name);
+                
+                // Create a form to submit the GPX content
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.action = `/download-gpx/${encodeURIComponent(trackName)}`;
+                form.target = '_blank';
+                form.style.display = 'none';
+                
+                // Add the GPX content as a hidden input
+                const gpxInput = document.createElement('input');
+                gpxInput.type = 'hidden';
+                gpxInput.name = 'gpx_content';
+                gpxInput.value = gpxContent;
+                form.appendChild(gpxInput);
+                
+                // Add the track name
+                const nameInput = document.createElement('input');
+                nameInput.type = 'hidden';
+                nameInput.name = 'track_name';
+                nameInput.value = trackName;
+                form.appendChild(nameInput);
+                
+                // Add the form to the page and submit it
+                document.body.appendChild(form);
+                form.submit();
+                
+                // Remove the form after submission
+                setTimeout(() => {
+                    if (form.parentNode) {
+                        form.parentNode.removeChild(form);
+                    }
+                }, 1000);
+                
+                showDownloadFeedback(trackName, true, 'Download started');
+                
+            } catch (error) {
+                console.error('Server-side download failed:', error);
+                showDownloadFeedback(filename, false, 'Server download failed: ' + error.message);
+            }
+        }
+        
+        function showDownloadFeedback(filename, success, errorMessage = '') {
+            // Create a temporary notification
+            const notification = document.createElement('div');
+            notification.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                padding: 15px 20px;
+                border-radius: 5px;
+                color: white;
+                font-weight: bold;
+                z-index: 10000;
+                max-width: 300px;
+                word-wrap: break-word;
+            `;
+            
+            if (success) {
+                notification.style.backgroundColor = '#4CAF50';
+                notification.textContent = `✅ Downloaded: ${filename}.gpx`;
+            } else {
+                notification.style.backgroundColor = '#f44336';
+                notification.textContent = `❌ Download failed: ${errorMessage}`;
+            }
+            
+            document.body.appendChild(notification);
+            
+            // Remove notification after 3 seconds
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.parentNode.removeChild(notification);
+                }
+            }, 3000);
+        }
+
+        function showTrackOnMap(trackIndex) {
+            initMap();
+            mapContainer.style.display = 'block';
+            
+            // Clear existing layers
+            clearMap();
+            
+            const track = allTracks[trackIndex];
+            const points = track.points.map(p => [p.lat, p.lon]);
+            
+            if (points.length > 0) {
+                const color = getTrackColor(trackIndex);
+                
+                // Create polyline with popup
+                const polyline = L.polyline(points, {
+                    color: color,
+                    weight: 4,
+                    opacity: 0.8
+                }).addTo(map);
+                
+                // Add popup to polyline
+                polyline.bindPopup(`
+                    <strong>${track.name}</strong><br>
+                    Distance: ${track.total_distance_nm} nm<br>
+                    Duration: ${track.duration_hours} hours<br>
+                    Points: ${track.point_count}
+                `);
+                
+                // Add start marker
+                const startMarker = L.marker(points[0], {
+                    icon: L.divIcon({
+                        className: 'start-marker',
+                        html: '🟢',
+                        iconSize: [24, 24]
+                    })
+                }).addTo(map);
+                startMarker.bindPopup(`<strong>Start:</strong> ${track.name}`);
+                
+                // Add end marker
+                const endMarker = L.marker(points[points.length - 1], {
+                    icon: L.divIcon({
+                        className: 'end-marker',
+                        html: '🔴',
+                        iconSize: [24, 24]
+                    })
+                }).addTo(map);
+                endMarker.bindPopup(`<strong>End:</strong> ${track.name}`);
+                
+                trackLayers.push(polyline, startMarker, endMarker);
+                
+                // Fit map to track with padding
+                const bounds = polyline.getBounds();
+                map.fitBounds(bounds, {
+                    padding: [30, 30],
+                    maxZoom: 18
+                });
+                
+                // Show legend for single track
+                const legendContent = document.getElementById('legendContent');
+                legendContent.innerHTML = `
+                    <div style="margin-bottom: 5px;">
+                        <span style="display: inline-block; width: 20px; height: 4px; background-color: ${color}; margin-right: 8px;"></span>
+                        <span style="font-size: 12px;">${track.name}</span>
+                    </div>
+                `;
+                document.getElementById('legend').style.display = 'block';
+            }
+        }
+
+        function showAllTracks() {
+            initMap();
+            mapContainer.style.display = 'block';
+            
+            // Clear existing layers
+            clearMap();
+            
+            const bounds = L.latLngBounds();
+            const legendContent = document.getElementById('legendContent');
+            legendContent.innerHTML = '';
+            
+            allTracks.forEach((track, index) => {
+                const points = track.points.map(p => [p.lat, p.lon]);
+                
+                if (points.length > 0) {
+                    const color = getTrackColor(index);
+                    
+                    // Create polyline with popup
+                    const polyline = L.polyline(points, {
+                        color: color,
+                        weight: 3,
+                        opacity: 0.8
+                    }).addTo(map);
+                    
+                    // Add popup to polyline
+                    polyline.bindPopup(`
+                        <strong>${track.name}</strong><br>
+                        Distance: ${track.total_distance_nm} nm<br>
+                        Duration: ${track.duration_hours} hours<br>
+                        Points: ${track.point_count}
+                    `);
+                    
+                    // Add start marker
+                    const startMarker = L.marker(points[0], {
+                        icon: L.divIcon({
+                            className: 'start-marker',
+                            html: '🟢',
+                            iconSize: [20, 20]
+                        })
+                    }).addTo(map);
+                    startMarker.bindPopup(`<strong>Start:</strong> ${track.name}`);
+                    
+                    // Add end marker
+                    const endMarker = L.marker(points[points.length - 1], {
+                        icon: L.divIcon({
+                            className: 'end-marker',
+                            html: '🔴',
+                            iconSize: [20, 20]
+                        })
+                    }).addTo(map);
+                    endMarker.bindPopup(`<strong>End:</strong> ${track.name}`);
+                    
+                    trackLayers.push(polyline, startMarker, endMarker);
+                    
+                    // Extend bounds to include this track
+                    bounds.extend(points);
+                    
+                    // Add to legend
+                    const legendItem = document.createElement('div');
+                    legendItem.style.marginBottom = '5px';
+                    legendItem.innerHTML = `
+                        <span style="display: inline-block; width: 20px; height: 3px; background-color: ${color}; margin-right: 8px;"></span>
+                        <span style="font-size: 12px;">${track.name}</span>
+                    `;
+                    legendContent.appendChild(legendItem);
+                }
+            });
+            
+            if (bounds.isValid()) {
+                // Fit map to all tracks with padding
+                map.fitBounds(bounds, {
+                    padding: [30, 30],
+                    maxZoom: 16
+                });
+            }
+        }
+
+        function initMap() {
+            if (map) {
+                map.remove();
+                map = null;
+            }
+            mapContainer.style.display = 'block';
+            map = L.map('map').setView([0, 0], 2);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(map);
+        }
+
+        function clearMap() {
+            trackLayers.forEach(layer => {
+                if (map.hasLayer(layer)) {
+                    map.removeLayer(layer);
+                }
+            });
+            trackLayers = [];
+        }
+
+        function getTrackColor(index) {
+            const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F'];
+            return colors[index % colors.length];
+        }
+
+        function toggleLegend() {
+            const legend = document.getElementById('legend');
+            if (legend.style.display === 'none') {
+                legend.style.display = 'block';
+            } else {
+                legend.style.display = 'none';
+            }
+        }
+
+        function editTrackName(trackIndex) {
+            const nameSpan = document.getElementById(`track-name-${trackIndex}`);
+            const nameInput = document.getElementById(`track-name-edit-${trackIndex}`);
+            
+            nameSpan.style.display = 'none';
+            nameInput.style.display = 'inline-block';
+            nameInput.focus();
+            nameInput.select();
+        }
+
+        function saveTrackName(trackIndex) {
+            const nameSpan = document.getElementById(`track-name-${trackIndex}`);
+            const nameInput = document.getElementById(`track-name-edit-${trackIndex}`);
+            const newName = nameInput.value.trim();
+            
+            if (newName === '') {
+                // Restore original name if empty
+                updateTrackDisplayName(trackIndex);
+                nameSpan.style.display = 'inline-block';
+                nameInput.style.display = 'none';
+                return;
+            }
+            
+            // Update the display immediately
+            nameSpan.textContent = newName;
+            nameSpan.style.display = 'inline-block';
+            nameInput.style.display = 'none';
+            
+            // Update the track data
+            if (allTracks[trackIndex]) {
+                allTracks[trackIndex].display_name = newName;
+            }
+            
+            // Send update to server
+            updateTrackNameOnServer(trackIndex, newName);
+        }
+
+        function handleTrackNameKeyPress(event, trackIndex) {
+            if (event.key === 'Enter') {
+                saveTrackName(trackIndex);
+            } else if (event.key === 'Escape') {
+                const nameSpan = document.getElementById(`track-name-${trackIndex}`);
+                const nameInput = document.getElementById(`track-name-edit-${trackIndex}`);
+                
+                nameInput.value = nameSpan.textContent;
+                nameSpan.style.display = 'inline-block';
+                nameInput.style.display = 'none';
+            }
+        }
+
+        async function updateTrackNameOnServer(trackIndex, newName) {
+            try {
+                const response = await fetch('/update-track-name', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        track_index: trackIndex,
+                        new_name: newName
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    console.log('Track name updated successfully');
+                } else {
+                    console.error('Failed to update track name:', data.error);
+                }
+            } catch (error) {
+                console.error('Error updating track name:', error);
+            }
+        }
+    </script>
+</body>
+</html>
+
