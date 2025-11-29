@@ -615,6 +615,8 @@
                                 });
                                 showTracks(data.tracks);
                                 allTracks = data.tracks;
+                                // Store operation_id globally for download functionality
+                                window.currentOperationId = data.operation_id || currentOperationId;
                                 loading.style.display = 'none';
                                 submitBtn.disabled = false;
                                 currentOperationId = null;
@@ -893,15 +895,23 @@
                 const nameSpan = document.getElementById(`track-name-${trackIndex}`);
                 const trackName = nameSpan ? nameSpan.textContent : track.display_name || track.name;
                 
-                // Get GPX content
-                const gpxContent = track.gpx_content;
-                
-                if (!gpxContent) {
-                    throw new Error('No GPX content found');
+                // Use GET endpoint with operation_id and track_index if available
+                const operationId = window.currentOperationId;
+                if (operationId) {
+                    const trackNameParam = encodeURIComponent(trackName);
+                    const url = `/download-gpx/${operationId}/${trackIndex}?track_name=${trackNameParam}`;
+                    
+                    // Open in new window to trigger download
+                    window.open(url, '_blank');
+                    showDownloadFeedback(trackName, true, 'Download started');
+                } else {
+                    // Fallback: use POST method (may hit size limits for very large files)
+                    const gpxContent = track.gpx_content;
+                    if (!gpxContent) {
+                        throw new Error('No GPX content found');
+                    }
+                    downloadViaServerPost(gpxContent, trackName);
                 }
-                
-                // Use server-side download endpoint
-                downloadViaServer(gpxContent, trackName, trackIndex);
                 
             } catch (error) {
                 console.error('Error downloading GPX file:', error);
@@ -911,17 +921,13 @@
             }
         }
         
-        function downloadViaServer(gpxContent, filename, trackIndex) {
+        function downloadViaServerPost(gpxContent, filename) {
             try {
-                // Get the current track name (may have been edited)
-                const track = allTracks[trackIndex];
-                const nameSpan = document.getElementById(`track-name-${trackIndex}`);
-                const trackName = nameSpan ? nameSpan.textContent : (track.display_name || track.name);
-                
-                // Create a form to submit the GPX content
+                // Fallback POST method for when operation_id is not available
+                // This may hit size limits for very large GPX files
                 const form = document.createElement('form');
                 form.method = 'POST';
-                form.action = `/download-gpx/${encodeURIComponent(trackName)}`;
+                form.action = `/download-gpx-post/${encodeURIComponent(filename)}`;
                 form.target = '_blank';
                 form.style.display = 'none';
                 
@@ -936,7 +942,7 @@
                 const nameInput = document.createElement('input');
                 nameInput.type = 'hidden';
                 nameInput.name = 'track_name';
-                nameInput.value = trackName;
+                nameInput.value = filename;
                 form.appendChild(nameInput);
                 
                 // Add the form to the page and submit it
@@ -950,7 +956,7 @@
                     }
                 }, 1000);
                 
-                showDownloadFeedback(trackName, true, 'Download started');
+                showDownloadFeedback(filename, true, 'Download started');
                 
             } catch (error) {
                 console.error('Server-side download failed:', error);

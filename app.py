@@ -1,9 +1,34 @@
+"""
+GPX Track Splitter - A web application for splitting GPX track files
+
+Copyright (c) 2025 Douglas Carroll
+
+This work is licensed under the Creative Commons Attribution-ShareAlike 4.0
+International License. To view a copy of this license, visit
+http://creativecommons.org/licenses/by-sa/4.0/ or send a letter to Creative Commons,
+PO Box 1866, Mountain View, CA 94042, USA.
+
+You are free to:
+- Share: copy and redistribute the material in any medium or format
+- Adapt: remix, transform, and build upon the material for any purpose, even commercially
+
+Under the following terms:
+- Attribution: You must give appropriate credit, provide a link to the license, and indicate
+  if changes were made.
+- ShareAlike: If you remix, transform, or build upon the material, you must distribute your
+  contributions under the same license as the original.
+
+No additional restrictions: You may not apply legal terms or technological measures that
+legally restrict others from doing anything the license permits.
+"""
+
 from flask import Flask, render_template, request, jsonify, make_response
 from gpx_splitter import split_gpx_file, split_gpx_by_tracks
 import logging
 import requests
 import time
 import uuid
+import re
 from threading import Lock, Thread
 
 # Configure logging
@@ -11,6 +36,10 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+
+# Increase max content length to handle large GPX files (default is 16MB)
+# Set to 100MB to handle very large GPX files
+app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100 MB
 
 # Store progress and results for ongoing operations
 progress_store = {}
@@ -117,7 +146,9 @@ def split_gpx():
         max_distance_nm = float(request.form.get('max_distance_nm', 1.0))
         max_time_hours = float(request.form.get('max_time_hours', 1.0))
         require_timestamps = request.form.get('require_timestamps', 'false').lower() == 'true'
-        lookup_place_names = request.form.get('lookup_place_names', 'true').lower() == 'true'  # Default to True
+        # Checkbox: if present and value is 'true', then lookup is enabled
+        # If checkbox is unchecked, the key won't be in form data, so default to False
+        lookup_place_names = request.form.get('lookup_place_names', 'false').lower() == 'true'
         
         logger.info(f"Processing GPX file: {file.filename} with method: {split_method}")
         logger.info(f"Parameters: max_distance_nm={max_distance_nm}, max_time_hours={max_time_hours}, require_timestamps={require_timestamps}")
@@ -158,6 +189,65 @@ def split_gpx():
         def geocode_tracks():
             try:
                 tracks_data = []
+                
+                # If place name lookup is disabled, process immediately without geocoding
+                if not lookup_place_names:
+                    # Process all tracks quickly without geocoding
+                    for idx, track in enumerate(track_files):
+                        # Convert points to format suitable for JSON
+                        points_data = []
+                        for point in track['points']:
+                            points_data.append({
+                                'lat': point['lat'],
+                                'lon': point['lon'],
+                                'timestamp': point['timestamp'].isoformat()
+                            })
+                        
+                        # Get start and end coordinates
+                        start_lat = track['points'][0]['lat']
+                        start_lon = track['points'][0]['lon']
+                        end_lat = track['points'][-1]['lat']
+                        end_lon = track['points'][-1]['lon']
+                        
+                        # Format coordinates
+                        start_coords = f"{start_lat:.4f},{start_lon:.4f}"
+                        end_coords = f"{end_lat:.4f},{end_lon:.4f}"
+                        
+                        tracks_data.append({
+                            'name': track['name'],
+                            'start_time': track['start_time'].isoformat(),
+                            'end_time': track['end_time'].isoformat(),
+                            'duration_hours': round(track['duration'].total_seconds() / 3600, 2),
+                            'total_distance_nm': round(track['total_distance_nm'], 2),
+                            'point_count': track['point_count'],
+                            'gpx_content': track['gpx_content'],
+                            'points': points_data,
+                            'start_lat': start_lat,
+                            'start_lon': start_lon,
+                            'end_lat': end_lat,
+                            'end_lon': end_lon,
+                            'start_coords': start_coords,
+                            'end_coords': end_coords,
+                            'start_place_name': '',
+                            'end_place_name': ''
+                        })
+                    
+                    # Sort tracks by start_time in descending order (newest first)
+                    tracks_data.sort(key=lambda x: x['start_time'], reverse=True)
+                    
+                    # Store results and mark as complete immediately
+                    with progress_lock:
+                        if operation_id in results_store:
+                            results_store[operation_id]['tracks'] = tracks_data
+                        if operation_id in progress_store:
+                            progress_store[operation_id]['status'] = 'complete'
+                            progress_store[operation_id]['completed'] = 0
+                            progress_store[operation_id]['current_track'] = len(track_files)
+                    
+                    logger.info(f"Successfully processed GPX file into {len(tracks_data)} tracks using {split_method} method (place names disabled)")
+                    return
+                
+                # Place name lookup is enabled - process with geocoding
                 for idx, track in enumerate(track_files):
                     # Convert points to format suitable for JSON
                     points_data = []
@@ -256,6 +346,10 @@ def split_gpx():
         thread = Thread(target=geocode_tracks, daemon=True)
         thread.start()
         
+        # Small delay to ensure operation is initialized before returning
+        # This helps prevent race conditions when lookup is disabled
+        time.sleep(0.1)
+        
         # Return immediately with operation_id
         return jsonify({
             'success': True,
@@ -277,8 +371,161 @@ def split_gpx():
             'error': f'Error processing GPX file: {str(e)}'
         }), 500
 
-@app.route('/download-gpx/<track_name>', methods=['POST'])
-def download_gpx(track_name):
+@app.route('/download-gpx/<operation_id>/<int:track_index>', methods=['GET'])
+def download_gpx(operation_id, track_index):
+    try:
+        # Get GPX content from stored results
+        with progress_lock:
+            results = results_store.get(operation_id, None)
+        
+        if not results or not results.get('tracks'):
+            return jsonify({
+                'success': False,
+                'error': 'Track data not found. Please process the GPX file again.'
+            }), 404
+        
+        tracks = results['tracks']
+        if track_index < 0 or track_index >= len(tracks):
+            return jsonify({
+                'success': False,
+                'error': 'Invalid track index'
+            }), 400
+        
+        track = tracks[track_index]
+        gpx_content = track.get('gpx_content')
+        if not gpx_content:
+            return jsonify({
+                'success': False,
+                'error': 'No GPX content available for this track'
+            }), 400
+        
+        # Get the track name to use (may have been edited)
+        actual_track_name = request.args.get('track_name', track.get('name', 'Track'))
+        
+        # Sanitize filename - remove/replace invalid characters for filenames
+        # Replace invalid filename characters with underscores
+        # Invalid chars: / \ : * ? " < > |
+        sanitized_filename = re.sub(r'[<>:"/\\|?*]', '_', actual_track_name)
+        # Replace commas and multiple spaces with single underscores
+        sanitized_filename = re.sub(r'[, ]+', '_', sanitized_filename)
+        # Remove leading/trailing underscores and dots
+        sanitized_filename = sanitized_filename.strip('_.')
+        # Limit length to avoid filesystem issues (255 chars is common limit, leave room for .gpx)
+        if len(sanitized_filename) > 240:
+            sanitized_filename = sanitized_filename[:240]
+        
+        # Update the GPX content with the new track name
+        import xml.etree.ElementTree as ET
+        root = ET.fromstring(gpx_content)
+        namespace = {'gpx': 'http://www.topografix.com/GPX/1/1'}
+        namespace_uri = 'http://www.topografix.com/GPX/1/1'
+        
+        # Find and update the track name
+        # Try to find trk with namespace first, then without
+        trk = root.find(f'.//{{{namespace_uri}}}trk')
+        if trk is None:
+            trk = root.find('.//gpx:trk', namespace)
+        if trk is None:
+            trk = root.find('.//trk')
+            
+        if trk is not None:
+            # Remove ALL existing name elements by iterating through children
+            # This is the most reliable method
+            children_list = list(trk)
+            for child in children_list:
+                tag = child.tag
+                # Check if this is a name element (with or without namespace)
+                if tag == 'name' or tag.endswith('}name'):
+                    trk.remove(child)
+            
+            # Find the namespace used by trk element
+            trk_tag = trk.tag
+            if '}' in trk_tag:
+                # Element uses namespace, extract it
+                ns_uri = trk_tag.split('}')[0][1:]  # Remove the {
+                name_tag = f'{{{ns_uri}}}name'
+            else:
+                # No namespace, use simple name
+                name_tag = 'name'
+            
+            # Create new name element with proper namespace
+            name_elem = ET.Element(name_tag)
+            name_elem.text = actual_track_name
+            
+            # Find trkseg to insert name before it, or insert at beginning
+            trkseg = trk.find(f'{{{namespace_uri}}}trkseg')
+            if trkseg is None:
+                trkseg = trk.find('gpx:trkseg', namespace)
+            if trkseg is None:
+                trkseg = trk.find('trkseg')
+                
+            if trkseg is not None:
+                # Insert name before trkseg
+                trk.insert(list(trk).index(trkseg), name_elem)
+            else:
+                # No trkseg found, insert at beginning
+                trk.insert(0, name_elem)
+            
+            # Update GPX content with proper XML formatting
+            # Register namespaces to avoid prefixes in output
+            ET.register_namespace('', 'http://www.topografix.com/GPX/1/1')
+            # Use a simple formatting approach that preserves default namespace
+            rough_string = ET.tostring(root, encoding='unicode')
+            # Parse and reformat to ensure proper structure
+            from xml.dom import minidom
+            reparsed = minidom.parseString(rough_string)
+            gpx_content = reparsed.toprettyxml(indent="  ")
+            # Remove extra blank lines that minidom adds
+            lines = [line for line in gpx_content.split('\n') if line.strip()]
+            gpx_content = '\n'.join(lines)
+            
+            # Replace namespace prefixes with default namespace
+            # Some GPX readers don't handle ns0: prefixes well
+            gpx_content = gpx_content.replace('ns0:', '').replace(' xmlns:ns0="http://www.topografix.com/GPX/1/1"', '')
+            # Ensure xmlns attribute is present
+            if 'xmlns=' not in gpx_content.split('\n')[0]:
+                # Add xmlns to the gpx element
+                lines = gpx_content.split('\n')
+                for i, line in enumerate(lines):
+                    if '<gpx' in line and 'xmlns=' not in line:
+                        lines[i] = line.replace('<gpx', '<gpx xmlns="http://www.topografix.com/GPX/1/1"')
+                        break
+                gpx_content = '\n'.join(lines)
+            
+            # Replace the XML declaration to ensure proper encoding
+            if gpx_content.strip().startswith('<?xml'):
+                # Remove the old declaration and add a proper one with encoding
+                lines = gpx_content.split('\n')
+                if lines[0].strip().startswith('<?xml'):
+                    gpx_content = '<?xml version="1.0" encoding="UTF-8"?>\n' + '\n'.join(lines[1:])
+        
+        # Ensure proper XML declaration at the beginning
+        if not gpx_content.strip().startswith('<?xml'):
+            gpx_content = '<?xml version="1.0" encoding="UTF-8"?>\n' + gpx_content
+        
+        # Create response with proper headers for download
+        response = make_response(gpx_content)
+        response.headers['Content-Type'] = 'application/gpx+xml; charset=utf-8'
+        # Use sanitized filename for download, but keep original name in GPX content
+        response.headers['Content-Disposition'] = f'attachment; filename="{sanitized_filename}.gpx"'
+        
+        logger.info(f"Downloading GPX file: {sanitized_filename}.gpx (original: {actual_track_name})")
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error serving GPX download: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': f'Error serving GPX download: {str(e)}'
+        }), 500
+
+@app.route('/download-gpx-post/<track_name>', methods=['POST'])
+def download_gpx_post(track_name):
+    """
+    Fallback POST endpoint for downloading GPX files.
+    Used when GET endpoint is not available (e.g., operation_id expired).
+    Note: This may hit size limits for very large GPX files.
+    """
     try:
         # Get the GPX content from the form data
         gpx_content = request.form.get('gpx_content')
@@ -291,34 +538,86 @@ def download_gpx(track_name):
         # Get the track name to use (may have been edited)
         actual_track_name = request.form.get('track_name', track_name)
         
+        # Sanitize filename
+        sanitized_filename = re.sub(r'[<>:"/\\|?*]', '_', actual_track_name)
+        sanitized_filename = re.sub(r'[, ]+', '_', sanitized_filename)
+        sanitized_filename = sanitized_filename.strip('_.')
+        if len(sanitized_filename) > 240:
+            sanitized_filename = sanitized_filename[:240]
+        
         # Update the GPX content with the new track name
-        import xml.etree.ElementTree as ET
         root = ET.fromstring(gpx_content)
-        namespace = {'gpx': 'http://www.topografix.com/GPX/1/1'}
+        namespace_uri = 'http://www.topografix.com/GPX/1/1'
         
-        # Find and update the track name
-        trk = root.find('.//gpx:trk', namespace) or root.find('.//trk')
-        if trk is not None:
-            name_elem = trk.find('gpx:name', namespace) or trk.find('name')
-            if name_elem is not None:
-                name_elem.text = actual_track_name
-            else:
-                name_elem = ET.SubElement(trk, 'name')
-                name_elem.text = actual_track_name
+        trk = root.find(f'.//{{{namespace_uri}}}trk')
+        if trk is None:
+            trk = root.find('.//trk')
             
-            # Update GPX content
-            gpx_content = ET.tostring(root, encoding='unicode')
+        if trk is not None:
+            # Remove all name elements
+            for child in list(trk):
+                if child.tag == 'name' or child.tag.endswith('}name'):
+                    trk.remove(child)
+            
+            # Create new name element
+            trk_tag = trk.tag
+            if '}' in trk_tag:
+                ns_uri = trk_tag.split('}')[0][1:]
+                name_tag = f'{{{ns_uri}}}name'
+            else:
+                name_tag = 'name'
+            
+            name_elem = ET.Element(name_tag)
+            name_elem.text = actual_track_name
+            
+            trkseg = trk.find(f'{{{namespace_uri}}}trkseg') or trk.find('trkseg')
+            if trkseg is not None:
+                trk.insert(list(trk).index(trkseg), name_elem)
+            else:
+                trk.insert(0, name_elem)
+            
+            # Format XML
+            # Register namespaces to avoid prefixes in output
+            ET.register_namespace('', 'http://www.topografix.com/GPX/1/1')
+            rough_string = ET.tostring(root, encoding='unicode')
+            from xml.dom import minidom
+            reparsed = minidom.parseString(rough_string)
+            gpx_content = reparsed.toprettyxml(indent="  ")
+            lines = [line for line in gpx_content.split('\n') if line.strip()]
+            gpx_content = '\n'.join(lines)
+            
+            # Replace namespace prefixes with default namespace
+            # Some GPX readers don't handle ns0: prefixes well
+            gpx_content = gpx_content.replace('ns0:', '').replace(' xmlns:ns0="http://www.topografix.com/GPX/1/1"', '')
+            # Ensure xmlns attribute is present
+            if 'xmlns=' not in gpx_content.split('\n')[0]:
+                # Add xmlns to the gpx element
+                lines = gpx_content.split('\n')
+                for i, line in enumerate(lines):
+                    if '<gpx' in line and 'xmlns=' not in line:
+                        lines[i] = line.replace('<gpx', '<gpx xmlns="http://www.topografix.com/GPX/1/1"')
+                        break
+                gpx_content = '\n'.join(lines)
+            
+            # Replace the XML declaration to ensure proper encoding
+            if gpx_content.strip().startswith('<?xml'):
+                # Remove the old declaration and add a proper one with encoding
+                lines = gpx_content.split('\n')
+                if lines[0].strip().startswith('<?xml'):
+                    gpx_content = '<?xml version="1.0" encoding="UTF-8"?>\n' + '\n'.join(lines[1:])
         
-        # Create response with proper headers for download
+        if not gpx_content.strip().startswith('<?xml'):
+            gpx_content = '<?xml version="1.0" encoding="UTF-8"?>\n' + gpx_content
+        
         response = make_response(gpx_content)
         response.headers['Content-Type'] = 'application/gpx+xml; charset=utf-8'
-        response.headers['Content-Disposition'] = f'attachment; filename="{actual_track_name}.gpx"'
+        response.headers['Content-Disposition'] = f'attachment; filename="{sanitized_filename}.gpx"'
         
-        logger.info(f"Downloading GPX file: {actual_track_name}.gpx")
+        logger.info(f"Downloading GPX file via POST: {sanitized_filename}.gpx")
         return response
         
     except Exception as e:
-        logger.error(f"Error serving GPX download: {str(e)}")
+        logger.error(f"Error serving GPX download via POST: {str(e)}")
         return jsonify({
             'success': False,
             'error': f'Error serving GPX download: {str(e)}'
@@ -335,6 +634,19 @@ def get_progress(operation_id):
         results = results_store.get(operation_id, None)
     
     if progress is None:
+        # Check if results exist even if progress was cleaned up
+        if results and results.get('tracks'):
+            # Return results even if progress entry is gone
+            return jsonify({
+                'success': True,
+                'status': 'complete',
+                'tracks': results['tracks'],
+                'split_method': results['split_method'],
+                'total_tracks': len(results['tracks']),
+                'completed': 0,
+                'total': 0
+            })
+        
         return jsonify({
             'success': False,
             'error': 'Operation not found',
@@ -356,11 +668,17 @@ def get_progress(operation_id):
     }
     
     # If complete, include results
-    if progress.get('status') == 'complete' and results and results.get('tracks'):
-        response_data['tracks'] = results['tracks']
-        response_data['split_method'] = results['split_method']
-    elif progress.get('status') == 'error' and results and results.get('error'):
-        response_data['error'] = results['error']
+    if progress.get('status') == 'complete':
+        if results and results.get('tracks'):
+            response_data['tracks'] = results['tracks']
+            response_data['split_method'] = results['split_method']
+            response_data['operation_id'] = operation_id  # Include operation_id for downloads
+        # Always set status to complete
+        response_data['status'] = 'complete'
+    elif progress.get('status') == 'error':
+        if results and results.get('error'):
+            response_data['error'] = results['error']
+        response_data['status'] = 'error'
     
     return jsonify(response_data)
 

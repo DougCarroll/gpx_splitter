@@ -1,3 +1,27 @@
+"""
+GPX Track Splitter - Core GPX splitting functionality
+
+Copyright (c) 2025 Douglas Carroll
+
+This work is licensed under the Creative Commons Attribution-ShareAlike 4.0
+International License. To view a copy of this license, visit
+http://creativecommons.org/licenses/by-sa/4.0/ or send a letter to Creative Commons,
+PO Box 1866, Mountain View, CA 94042, USA.
+
+You are free to:
+- Share: copy and redistribute the material in any medium or format
+- Adapt: remix, transform, and build upon the material for any purpose, even commercially
+
+Under the following terms:
+- Attribution: You must give appropriate credit, provide a link to the license, and indicate
+  if changes were made.
+- ShareAlike: If you remix, transform, or build upon the material, you must distribute your
+  contributions under the same license as the original.
+
+No additional restrictions: You may not apply legal terms or technological measures that
+legally restrict others from doing anything the license permits.
+"""
+
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 import logging
@@ -185,32 +209,41 @@ def create_gpx_content(track_points, track_name="Track"):
     Returns:
         str: GPX XML content as a string
     """
-    # Create the GPX structure
-    gpx = ET.Element('gpx')
+    # Create the GPX structure with explicit namespace
+    namespace_uri = 'http://www.topografix.com/GPX/1/1'
+    gpx = ET.Element(f'{{{namespace_uri}}}gpx')
     gpx.set('version', '1.1')
     gpx.set('creator', 'GPX Track Splitter')
-    gpx.set('xmlns', 'http://www.topografix.com/GPX/1/1')
+    gpx.set('xmlns', namespace_uri)
     
-    # Create track
-    trk = ET.SubElement(gpx, 'trk')
-    name = ET.SubElement(trk, 'name')
+    # Create track with namespace
+    trk = ET.SubElement(gpx, f'{{{namespace_uri}}}trk')
+    name = ET.SubElement(trk, f'{{{namespace_uri}}}name')
     name.text = track_name
     
-    # Create track segment
-    trkseg = ET.SubElement(trk, 'trkseg')
+    # Create track segment with namespace
+    trkseg = ET.SubElement(trk, f'{{{namespace_uri}}}trkseg')
     
-    # Add track points
+    # Add track points with namespace
     for point in track_points:
-        trkpt = ET.SubElement(trkseg, 'trkpt')
+        trkpt = ET.SubElement(trkseg, f'{{{namespace_uri}}}trkpt')
         trkpt.set('lat', str(point['lat']))
         trkpt.set('lon', str(point['lon']))
         
-        # Add timestamp
-        time_elem = ET.SubElement(trkpt, 'time')
+        # Add timestamp with namespace
+        time_elem = ET.SubElement(trkpt, f'{{{namespace_uri}}}time')
         time_elem.text = point['timestamp'].isoformat()
     
-    # Convert to string
-    return ET.tostring(gpx, encoding='unicode')
+    # Convert to string with proper formatting
+    from xml.dom import minidom
+    rough_string = ET.tostring(gpx, encoding='unicode')
+    reparsed = minidom.parseString(rough_string)
+    gpx_xml = reparsed.toprettyxml(indent="  ")
+    # Remove the XML declaration line that minidom adds (callers can add their own if needed)
+    lines = gpx_xml.split('\n')
+    # Skip the first line (XML declaration) and rejoin
+    gpx_xml = '\n'.join(lines[1:]) if lines[0].startswith('<?xml') else gpx_xml
+    return gpx_xml
 
 def split_gpx_file(gpx_content, max_distance_nm=1.0, max_time_hours=1.0, require_timestamps=False):
     """
