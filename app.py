@@ -35,6 +35,9 @@ from threading import Lock, Thread
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Suppress Werkzeug development server warning
+logging.getLogger('werkzeug').setLevel(logging.ERROR)
+
 app = Flask(__name__)
 
 # Increase max content length to handle large GPX files (default is 16MB)
